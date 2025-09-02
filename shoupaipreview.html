@@ -1,0 +1,686 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>兽牌图片预览 · 可拖拽/缩放</title>
+    <style>
+    :root{
+      --safe-top:5%;
+      --safe-right:5%;
+      --safe-bottom:5%;
+      --safe-left:5%;
+    }
+    *{box-sizing:border-box}
+    /* 让页面成为纵向flex，footer自然贴底 */
+    body{
+      margin:0;min-height:100vh;display:flex;flex-direction:column;
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans";
+      background:#f8fafc;color:#111827;-webkit-text-size-adjust:100%;
+    }
+
+    header{
+      position:sticky;top:0;z-index:20;background:#fff;border-bottom:1px solid #e5e7eb;
+      padding:10px 12px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+      flex:0 0 auto;
+    }
+    header .title{font-weight:700;margin-right:auto;white-space:nowrap}
+
+    .group{
+      display:flex;align-items:center;gap:8px;padding:6px 10px;
+      border:1px solid #e5e7eb;border-radius:10px;background:#fff;
+    }
+    .btn,label.btn{
+      cursor:pointer;border:1px solid #e5e7eb;background:#fff;padding:8px 12px;border-radius:10px;
+      display:inline-flex;align-items:center;gap:6px;white-space:nowrap
+    }
+    .btn.small{padding:6px 10px;font-size:14px}
+
+    /* 让 range 呈现滑动条 */
+    input[type="range"].slider{appearance:none;-webkit-appearance:none;height:6px;border-radius:999px;background:#e5e7eb}
+    input[type="range"].slider::-webkit-slider-thumb{appearance:none;-webkit-appearance:none;width:16px;height:16px;border-radius:50%;background:#111}
+    input[type="range"].slider::-moz-range-thumb{width:16px;height:16px;border-radius:50%;background:#111;border:none}
+    input[type="range"].slider::-ms-thumb{width:16px;height:16px;border-radius:50%;background:#111;border:none}
+    .val{min-width:3.2em;display:inline-block;text-align:left;white-space:nowrap}
+
+    /* 桌面端紧凑 */
+    @media (min-width:1600px){
+      header{flex-wrap:nowrap;gap:8px;padding:8px 10px;overflow-x:auto}
+      .group{gap:6px;padding:6px 8px;flex:0 0 auto;white-space:nowrap}
+      .group .slider{width:110px}
+      .btn.small{padding:5px 9px;font-size:13px}
+      select{max-width:92px}
+    }
+
+    /* 移动端 */
+    @media (max-width:640px){
+      header{padding:8px 8px;gap:8px}
+      .group{width:100%; padding:8px}
+      .group .slider{width:100% !important}
+      .btn.small{padding:6px 10px}
+    }
+
+
+    /* <530px：仅前景图控件组换两行；第二行为 - 滑条 + 百分比 */
+    @media (max-width:530px){
+      #ctrlGroup{
+        display:flex;
+        flex-wrap:wrap;      /* 只这组允许换行 */
+        gap:8px;
+        align-items:center;
+      }
+      /* 默认：第一行（非缩放控件） */
+      #ctrlGroup > *{ order:1; }
+    
+      /* 插入一个“换行符”把缩放控件推到第二行 */
+      #ctrlGroup::after{
+        content:"";
+        flex-basis:100%;     /* 强制换到下一行 */
+        order:2;
+      }
+    
+      /* 第二行的四个缩放控件 */
+      #ctrlGroup #zoomOut,
+      #ctrlGroup #zoom,
+      #ctrlGroup #zoomIn,
+      #ctrlGroup #zoomVal{
+        order:3;
+      }
+    
+      /* 撤销 640px 里对所有 slider 的 100% 强制宽度；让滑条与＋/－同一行 */
+      #ctrlGroup #zoom{
+        width:auto !important;
+        flex:1 1 200px;      /* 占据可用空间 */
+        min-width:140px;     /* 防止太窄 */
+        margin:6px 0;
+      }
+    }
+
+    /* 调小参考边框内四个滑块的宽度 */
+    #insetTop,
+    #insetRight,
+    #insetBottom,
+    #insetLeft {
+      width: 80px !important;   /* 默认宽度 */
+    }
+    
+    /* 桌面端超宽时再紧凑一点 */
+    @media (min-width:1600px){
+      #insetTop,
+      #insetRight,
+      #insetBottom,
+      #insetLeft {
+        width: 70px !important;
+      }
+    }
+    
+    /* 移动端则让它们自适应 */
+    @media (max-width:640px){
+      #insetTop,
+      #insetRight,
+      #insetBottom,
+      #insetLeft {
+        width: 100% !important;
+      }
+    }
+
+
+
+    /* main 占据剩余空间，用于承载 stage */
+    main{flex:1 0 auto;display:flex}
+    .stage{
+      position:relative;min-height:280px;overflow:hidden;margin:12px auto;border-radius:14px;
+      border:1px solid #e5e7eb;background:#fff;cursor:grab;touch-action:none;width:min(96vw,980px);height:520px
+    }
+    @media (max-width:640px){.stage{margin:8px auto}}
+    .stage.dragging{cursor:grabbing}
+
+    .bg-layer{position:absolute;inset:0;pointer-events:none}
+    .bg-layer img{width:100%;height:100%;object-fit:cover;display:block}
+    .bg-layer.top{z-index:4}
+
+    .safe-area{position:absolute;inset:var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);border-radius:18px;overflow:hidden;z-index:3}
+    .frame-overlay{position:absolute;inset:var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);border:2px dashed rgba(37,99,235,.8);border-radius:18px;pointer-events:none;z-index:5}
+
+    .image-layer{position:absolute;left:0;top:0;transform-origin:0 0}
+    .image-layer img{-webkit-user-drag:none;user-select:none;pointer-events:none;display:block}
+
+    .drop-hint{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.75);opacity:0;pointer-events:none;transition:opacity .2s;z-index:6}
+    .stage.file-dragover .drop-hint{opacity:1}
+
+    .help{position:absolute;right:12px;bottom:12px;background:rgba(255,255,255,.85);border:1px solid #e5e7eb;border-radius:12px;padding:6px 10px;font-size:12px;z-index:7}
+
+    /* 页脚版权（非fixed，自然在底部） */
+    .footer{
+      flex:0 0 auto;
+      background: rgba(255,255,255,.9);
+      border-top:1px solid #e5e7eb;
+      text-align:center;
+      padding:6px 0;
+      font-size:14px;
+      color:#475569;
+    }
+  </style>
+  </head>
+  <body>
+    <header>
+      <div class="title">🐾 兽牌图片预览</div>
+
+      <div class="group">
+        <label class="btn small"><input id="bgFile" type="file" accept="image/*"
+            hidden />背景图片</label>
+        <label>层级
+          <select id="bgZ">
+            <option value="bottom" selected>底层</option>
+            <option value="top">顶层</option>
+          </select>
+        </label>
+        <button id="bgReset" class="btn small">重置背景</button>
+      </div>
+
+      <div class="group">
+        <label><input id="toggleFrame" type="checkbox" checked />参考边框</label>
+        <label>上 <input id="insetTop" type="range" min="0" max="30" step="1"
+            value="5" class="slider" /> <span id="insetTopVal"
+            class="val">5%</span></label>
+        <label>右 <input id="insetRight" type="range" min="0" max="30" step="1"
+            value="5" class="slider" /> <span id="insetRightVal"
+            class="val">5%</span></label>
+        <label>下 <input id="insetBottom" type="range" min="0" max="30" step="1"
+            value="5" class="slider" /> <span id="insetBottomVal"
+            class="val">5%</span></label>
+        <label>左 <input id="insetLeft" type="range" min="0" max="30" step="1"
+            value="5" class="slider" /> <span id="insetLeftVal"
+            class="val">5%</span></label>
+      </div>
+
+      <div class="group" id="ctrlGroup">
+        <label class="btn small"><input id="file" type="file" accept="image/*"
+            hidden />选择图片</label>
+        <button id="fit" class="btn small">适配</button>
+        <button id="reset" class="btn small">重置</button>
+        <button id="export" class="btn small">导出PNG</button>
+        <button id="zoomOut" class="btn small">－</button>
+        <input id="zoom" class="slider" type="range" min="0.01" max="5"
+          step="0.01" value="1" />
+        <span id="zoomVal" class="val">100%</span>
+        <button id="zoomIn" class="btn small">＋</button>
+      </div>
+    </header>
+
+    <main>
+      <div id="stage" class="stage">
+        <div id="bgBottom" class="bg-layer bottom"><img id="bgImgBottom"
+            alt="背景" /></div>
+        <div id="safeArea" class="safe-area">
+          <div id="imageLayer" class="image-layer">
+            <img id="img" alt="前景" style="display:none" />
+          </div>
+        </div>
+        <div id="bgTop" class="bg-layer top"><img id="bgImgTop"
+            alt="背景顶层" /></div>
+        <div id="dropHint" class="drop-hint">松开以上传图片</div>
+        <div id="frame" class="frame-overlay"></div>
+        <div class="help">支持拖拽/粘贴图片 · 中间区域保留，最外侧裁掉 · 导出PNG</div>
+      </div>
+    </main>
+
+    <footer class="footer">© 灵澜幻生</footer>
+
+    <script>
+(function(){
+  // ===== 默认配置（可被外部/URL 覆盖） =====
+  var DEFAULTS={ defaultBgUrl:'./static/bg.png', defaultBgLayer:'top', insetTop:23, insetRight:8, insetBottom:15, insetLeft:8 };
+  var EXTERNAL=(window.SHOU_PAI_CONFIG && typeof window.SHOU_PAI_CONFIG==='object') ? window.SHOU_PAI_CONFIG : (window.CONFIG||{});
+  try{
+    var ds=document.body.dataset||{}; var dataCfg={};
+    if(ds.bg) dataCfg.defaultBgUrl=ds.bg;
+    if(ds.layer && (ds.layer==='top'||ds.layer==='bottom')) dataCfg.defaultBgLayer=ds.layer;
+    ['Top','Right','Bottom','Left'].forEach(function(dir){
+      var key='inset'+dir;
+      var v=ds['inset-'+dir.toLowerCase()]||ds[key];
+      if(v!=null){ var n=Math.max(0,Math.min(30,parseInt(v,10)||0)); dataCfg[key]=n; }
+    });
+    EXTERNAL=Object.assign({},EXTERNAL,dataCfg);
+  }catch(e){}
+  var CONFIG=Object.assign({},DEFAULTS,EXTERNAL);
+  try{
+    var sp=new URLSearchParams(location.search);
+    if(sp.get('bg')) CONFIG.defaultBgUrl=sp.get('bg');
+    var lyr=sp.get('layer'); if(lyr==='top'||lyr==='bottom') CONFIG.defaultBgLayer=lyr;
+    ['t','r','b','l'].forEach(function(k,i){
+      var v=sp.get(k);
+      if(v!=null){
+        var n=Math.max(0,Math.min(30,parseInt(v,10)||0));
+        if(i===0) CONFIG.insetTop=n;
+        if(i===1) CONFIG.insetRight=n;
+        if(i===2) CONFIG.insetBottom=n;
+        if(i===3) CONFIG.insetLeft=n;
+      }});
+  }catch(e){}
+
+  // ===== 缓存元素 =====
+  var els={
+    stage:document.getElementById('stage'),
+    safeArea:document.getElementById('safeArea'),
+    imageLayer:document.getElementById('imageLayer'),
+    img:document.getElementById('img'),
+    fileInput:document.getElementById('file'),
+    zoomSlider:document.getElementById('zoom'),
+    zoomInBtn:document.getElementById('zoomIn'),
+    zoomOutBtn:document.getElementById('zoomOut'),
+    resetBtn:document.getElementById('reset'),
+    fitBtn:document.getElementById('fit'),
+    exportBtn:document.getElementById('export'),
+    toggleFrame:document.getElementById('toggleFrame'),
+    bgZ:document.getElementById('bgZ'),
+    bgBottom:document.getElementById('bgBottom'),
+    bgTop:document.getElementById('bgTop'),
+    bgImgBottom:document.getElementById('bgImgBottom'),
+    bgImgTop:document.getElementById('bgImgTop'),
+    dropHint:document.getElementById('dropHint'),
+    frame:document.getElementById('frame'),
+    bgFile:document.getElementById('bgFile'),
+    bgReset:document.getElementById('bgReset'),
+    insetTop:document.getElementById('insetTop'),
+    insetRight:document.getElementById('insetRight'),
+    insetBottom:document.getElementById('insetBottom'),
+    insetLeft:document.getElementById('insetLeft'),
+    insetTopVal:document.getElementById('insetTopVal'),
+    insetRightVal:document.getElementById('insetRightVal'),
+    insetBottomVal:document.getElementById('insetBottomVal'),
+    insetLeftVal:document.getElementById('insetLeftVal'),
+    zoomVal:document.getElementById('zoomVal')
+  };
+
+  // ===== 状态 =====
+  var state={x:0,y:0,s:1};
+  var imgSize={w:0,h:0};
+  var objectUrl=null;           // 前景图片 URL
+  var bgObjectUrl=null;         // 背景图片 URL（本地选择时）
+  var isInteracting=false, wheelTimer=null;
+  var bgRatio=9/16;             // 背景宽高比
+
+  // ===== 背景加载（避免 CORS 污染） =====
+  var bg=new Image();
+  function loadDefaultBg(){
+    var url=CONFIG.defaultBgUrl || './static/bg.png';
+    try{
+      fetch(url,{cache:'force-cache'})
+        .then(function(res){ return res.blob(); })
+        .then(function(blob){
+          if(bgObjectUrl){ URL.revokeObjectURL(bgObjectUrl); bgObjectUrl=null; }
+          var obj=URL.createObjectURL(blob);
+          bg.src=obj;
+        })
+        .catch(function(){ bg.crossOrigin='anonymous'; bg.src=url; });
+    }catch(e){ bg.crossOrigin='anonymous'; bg.src=url; }
+  }
+  if(els.bgZ) els.bgZ.value=(CONFIG.defaultBgLayer==='top'?'top':'bottom');
+  ['Top','Right','Bottom','Left'].forEach(function(dir){
+    if(els['inset'+dir]){
+      els['inset'+dir].value=CONFIG['inset'+dir];
+      if(els['inset'+dir+'Val']) els['inset'+dir+'Val'].textContent=CONFIG['inset'+dir]+'%';
+    }});
+  loadDefaultBg();
+
+  bg.onload=function(){
+    bgRatio=bg.naturalHeight/bg.naturalWidth;
+    els.bgImgBottom.src=bg.src;
+    els.bgImgTop.src=bg.src;
+    resizeStageToBg();
+    applyBgZ();
+  };
+
+  // ===== 工具函数 =====
+  function applyBgZ(){
+    var layer=els.bgZ?els.bgZ.value:CONFIG.defaultBgLayer;
+    var onTop=(layer==='top');
+    if(els.bgZ) els.bgZ.value=layer;
+    if(els.bgTop) els.bgTop.style.display=onTop?'block':'none';
+    if(els.bgBottom) els.bgBottom.style.display=onTop?'none':'block';
+  }
+  function applyFrame(){ if(els.frame) els.frame.style.display=(els.toggleFrame && els.toggleFrame.checked)?'block':'none'; }
+  function applyInsets(){
+    function clampPct(n){ return Math.max(0,Math.min(30,parseInt(n||'0',10))); }
+    var t=clampPct(els.insetTop&&els.insetTop.value),
+        r=clampPct(els.insetRight&&els.insetRight.value),
+        b=clampPct(els.insetBottom&&els.insetBottom.value),
+        l=clampPct(els.insetLeft&&els.insetLeft.value);
+    document.documentElement.style.setProperty('--safe-top',t+'%');
+    document.documentElement.style.setProperty('--safe-right',r+'%');
+    document.documentElement.style.setProperty('--safe-bottom',b+'%');
+    document.documentElement.style.setProperty('--safe-left',l+'%');
+    if(els.insetTopVal) els.insetTopVal.textContent=t+'%';
+    if(els.insetRightVal) els.insetRightVal.textContent=r+'%';
+    if(els.insetBottomVal) els.insetBottomVal.textContent=b+'%';
+    if(els.insetLeftVal) els.insetLeftVal.textContent=l+'%';
+    fitToSafeArea();
+  }
+
+  function resizeStageToBg(){
+    var vw=(window.visualViewport?window.visualViewport.width:window.innerWidth);
+    var vh=(window.visualViewport?window.visualViewport.height:window.innerHeight);
+    var w=Math.min(vw*0.96,980);
+    var h=w*bgRatio;
+    var header=document.querySelector('header');
+    var footer=document.querySelector('footer');
+    var headerH=(header?header.offsetHeight:0);
+    var footerH=(footer?footer.offsetHeight:0);
+    var maxH=vh-headerH-footerH-24; // 减去header和footer高度，保证整页不超过视口
+    if(h>maxH){ h=Math.max(260,maxH); w=h/bgRatio; }
+    els.stage.style.width=w+'px';
+    els.stage.style.height=h+'px';
+    fitToSafeArea();
+  }
+
+  function ensureSliderRange(target){
+    if(!els.zoomSlider) return;
+    var min=parseFloat(els.zoomSlider.min||'0.01');
+    var max=parseFloat(els.zoomSlider.max||'5');
+    if(target>max){ max=Math.ceil(target*1.2*100)/100; els.zoomSlider.max=String(max);}
+    if(target<min){ min=Math.max(0.01,Math.floor(target*0.8*100)/100); els.zoomSlider.min=String(min);}
+  }
+
+  function applyTransform(){
+    els.imageLayer.style.transform='translate('+state.x+'px,'+state.y+'px) scale('+state.s+')';
+    if(els.zoomSlider){
+      ensureSliderRange(state.s);
+      var min=parseFloat(els.zoomSlider.min||'0.01');
+      var max=parseFloat(els.zoomSlider.max||'5');
+      var v=Math.min(max,Math.max(min,state.s));
+      els.zoomSlider.value=String(v);
+    }
+    if(els.zoomVal) els.zoomVal.textContent=Math.round(state.s*100)+'%';
+  }
+
+  function fitToSafeArea(){
+    if(!imgSize.w||!imgSize.h) return;
+    var sr=els.safeArea.getBoundingClientRect();
+    var s=Math.max(sr.width/imgSize.w, sr.height/imgSize.h);
+    ensureSliderRange(s);
+    state.s=s;
+    state.x=(sr.width-imgSize.w*s)/2;
+    state.y=(sr.height-imgSize.h*s)/2;
+    if(els.zoomSlider) els.zoomSlider.value=String(s);
+    if(els.zoomVal) els.zoomVal.textContent=Math.round(s*100)+'%';
+    applyTransform();
+  }
+
+  function reset(){ fitToSafeArea(); }
+
+  function setScaleAtPoint(nextS,cx,cy){
+    var sr=els.safeArea.getBoundingClientRect();
+    var px=cx-sr.left;
+    var py=cy-sr.top;
+    var wx=(px-state.x)/state.s;
+    var wy=(py-state.y)/state.s;
+    state.s=Math.min(5,Math.max(0.01,nextS));
+    state.x=px-wx*state.s;
+    state.y=py-wy*state.s;
+    applyTransform();
+  }
+
+  function loadFile(file){
+    if(!file) return;
+    if(!(file instanceof File)){
+      alert('请先将图片保存到本地后再导入。');
+      return;
+    }
+    if(objectUrl) URL.revokeObjectURL(objectUrl);
+    objectUrl=URL.createObjectURL(file);
+    els.img.onload=function(){
+      els.img.style.display='block';
+      imgSize={w:els.img.naturalWidth,h:els.img.naturalHeight};
+      fitToSafeArea();
+    };
+    els.img.src=objectUrl;
+  }
+
+  // ===== 事件绑定：顶层设置区 =====
+  if(els.bgFile) els.bgFile.addEventListener('change',function(e){
+    var f=e.target.files&&e.target.files[0];
+    if(!f) return;
+    if(bgObjectUrl) URL.revokeObjectURL(bgObjectUrl);
+    bgObjectUrl=URL.createObjectURL(f);
+    bg.src=bgObjectUrl;
+  });
+  if(els.bgReset) els.bgReset.addEventListener('click',function(){
+    if(bgObjectUrl){ URL.revokeObjectURL(bgObjectUrl); bgObjectUrl=null; }
+    loadDefaultBg();
+  });
+  if(els.bgZ) els.bgZ.addEventListener('change',applyBgZ);
+  if(els.toggleFrame) els.toggleFrame.addEventListener('change',applyFrame);
+  ['insetTop','insetRight','insetBottom','insetLeft'].forEach(function(id){
+    if(els[id]) els[id].addEventListener('input',applyInsets);
+  });
+
+  // ===== 前景图与交互 =====
+  if(els.fileInput) els.fileInput.addEventListener('change',function(e){ loadFile(e.target.files[0]); });
+  els.stage.addEventListener('wheel',function(e){
+    isInteracting=true;
+    e.preventDefault();
+    setScaleAtPoint(state.s*Math.exp(-e.deltaY*0.001), e.clientX, e.clientY);
+    clearTimeout(wheelTimer);
+    wheelTimer=setTimeout(function(){isInteracting=false;},120);
+  });
+  if(els.zoomSlider){
+    var sliderHandler=function(e){
+      var target=parseFloat(e.target.value);
+      var sr=els.safeArea.getBoundingClientRect();
+      ensureSliderRange(target);
+      setScaleAtPoint(target, sr.left+sr.width/2, sr.top+sr.height/2);
+    };
+    els.zoomSlider.addEventListener('input',sliderHandler);
+    els.zoomSlider.addEventListener('change',sliderHandler);
+  }
+  if(els.zoomInBtn) els.zoomInBtn.addEventListener('click',function(){
+    var sr=els.safeArea.getBoundingClientRect();
+    setScaleAtPoint(state.s*1.1, sr.left+sr.width/2, sr.top+sr.height/2);
+  });
+  if(els.zoomOutBtn) els.zoomOutBtn.addEventListener('click',function(){
+    var sr=els.safeArea.getBoundingClientRect();
+    setScaleAtPoint(state.s/1.1, sr.left+sr.width/2, sr.top+sr.height/2);
+  });
+  if(els.resetBtn) els.resetBtn.addEventListener('click',reset);
+  if(els.fitBtn) els.fitBtn.addEventListener('click',fitToSafeArea);
+
+  // 拖拽平移（仅在 safe-area 内）
+  var dragging=false, startX=0, startY=0, baseX=0, baseY=0;
+  els.img.setAttribute('draggable','false');
+  els.stage.addEventListener('dragstart',function(e){ e.preventDefault(); });
+  els.safeArea.addEventListener('mousedown',function(e){
+    if(e.button!==0) return;
+    isInteracting=true; dragging=true;
+    startX=e.clientX; startY=e.clientY;
+    baseX=state.x; baseY=state.y;
+    els.stage.classList.add('dragging');
+  });
+  window.addEventListener('mousemove',function(e){
+    if(!dragging) return;
+    state.x=baseX+(e.clientX-startX);
+    state.y=baseY+(e.clientY-startY);
+    applyTransform();
+  });
+  window.addEventListener('mouseup',function(){
+    dragging=false;
+    els.stage.classList.remove('dragging');
+    isInteracting=false;
+  });
+
+  // 触摸：单指拖动 / 双指捏合
+  var touchMode=null; var tStart={x:0,y:0,baseX:0,baseY:0}; var pinchStart={dist:0,s:1,cx:0,cy:0};
+  els.safeArea.addEventListener('touchstart',function(e){
+    isInteracting=true;
+    if(e.touches.length===1){
+      touchMode='pan';
+      tStart.x=e.touches[0].clientX; tStart.y=e.touches[0].clientY;
+      tStart.baseX=state.x; tStart.baseY=state.y;
+    } else if(e.touches.length>=2){
+      touchMode='pinch';
+      var a=e.touches[0], b=e.touches[1];
+      pinchStart.dist=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
+      pinchStart.s=state.s;
+      var m={x:(a.clientX+b.clientX)/2, y:(a.clientY+b.clientY)/2};
+      pinchStart.cx=m.x; pinchStart.cy=m.y;
+    }
+  }, {passive:false});
+  els.safeArea.addEventListener('touchmove',function(e){
+    e.preventDefault();
+    if(touchMode==='pan' && e.touches.length===1){
+      var dx=e.touches[0].clientX-tStart.x;
+      var dy=e.touches[0].clientY-tStart.y;
+      state.x=tStart.baseX+dx; state.y=tStart.baseY+dy;
+      applyTransform();
+    } else if(touchMode==='pinch' && e.touches.length>=2){
+      var a=e.touches[0], b=e.touches[1];
+      var factor=Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY)/(pinchStart.dist||1);
+      setScaleAtPoint(pinchStart.s*factor, pinchStart.cx, pinchStart.cy);
+    }
+  }, {passive:false});
+  els.safeArea.addEventListener('touchend',function(){
+    touchMode=null;
+    setTimeout(function(){isInteracting=false;},100);
+  }, {passive:true});
+
+  // 只在真的拖入“文件”时显示上传提示
+  function dtHasFiles(dt){
+    if(!dt) return false;
+    if(dt.items && dt.items.length){
+      for(var i=0;i<dt.items.length;i++){ if(dt.items[i].kind==='file') return true; }
+    }
+    var t=dt.types;
+    if(!t) return false;
+    try{ if(typeof t.contains==='function') return t.contains('Files'); }catch(e){}
+    try{
+      var arr=[]; for(var j=0;j<t.length;j++){ arr.push(t[j]); }
+      return arr.indexOf('Files')!==-1;
+    }catch(e){}
+    return false;
+  }
+  els.stage.addEventListener('dragenter',function(e){
+    if(isInteracting) return;
+    if(dtHasFiles(e.dataTransfer)){ e.preventDefault(); els.stage.classList.add('file-dragover'); }
+  });
+  els.stage.addEventListener('dragover',function(e){
+    if(isInteracting) return;
+    if(dtHasFiles(e.dataTransfer)){ e.preventDefault(); els.stage.classList.add('file-dragover'); }
+    else { els.stage.classList.remove('file-dragover'); }
+  });
+  els.stage.addEventListener('dragleave',function(){ els.stage.classList.remove('file-dragover'); });
+  els.stage.addEventListener('drop',function(e){
+    e.preventDefault(); els.stage.classList.remove('file-dragover');
+    var f=e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if(f) loadFile(f);
+  });
+  window.addEventListener('paste',function(e){
+    var items=e.clipboardData && e.clipboardData.items ? e.clipboardData.items : [];
+    for(var i=0;i<items.length;i++){
+      var it=items[i];
+      if(it.type && it.type.indexOf('image/')===0){ loadFile(it.getAsFile()); break; }
+    }
+  });
+
+  // ===== 导出逻辑（保持不变） =====
+  if(els.exportBtn) els.exportBtn.addEventListener('click', function () {
+    try {
+      if (!(bg.complete && bg.naturalWidth > 0 && bg.naturalHeight > 0)) {
+        alert('暂无可用背景图，无法按背景原始分辨率导出'); 
+        return;
+      }
+
+      var rect = els.stage.getBoundingClientRect();
+      var sr   = els.safeArea.getBoundingClientRect();
+
+      var canvas = document.createElement('canvas');
+      canvas.width  = bg.naturalWidth;
+      canvas.height = bg.naturalHeight;
+      var ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+
+      var S_screen = Math.max(rect.width / bg.naturalWidth, rect.height / bg.naturalHeight);
+      var dw_screen = bg.naturalWidth  * S_screen;
+      var dh_screen = bg.naturalHeight * S_screen;
+      var ox_screen = rect.left + (rect.width  - dw_screen) / 2;
+      var oy_screen = rect.top  + (rect.height - dh_screen) / 2;
+
+      var dw_canvas = bg.naturalWidth;
+      var dh_canvas = bg.naturalHeight;
+      var ox_canvas = 0;
+      var oy_canvas = 0;
+
+      var k = (dw_canvas / dw_screen);
+
+      function drawBgCoverToCanvas() {
+        if (!(bg.complete && bg.naturalWidth)) return;
+        ctx.drawImage(bg, ox_canvas, oy_canvas, dw_canvas, dh_canvas);
+      }
+      if (els.bgZ.value === 'bottom') drawBgCoverToCanvas();
+
+      var clipX = Math.round((sr.left - ox_screen) * k + ox_canvas);
+      var clipY = Math.round((sr.top  - oy_screen) * k + oy_canvas);
+      var clipW = Math.round(sr.width  * k);
+      var clipH = Math.round(sr.height * k);
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(clipX, clipY, clipW, clipH);
+      ctx.clip();
+
+      if (els.img && els.img.complete && els.img.naturalWidth) {
+        var offX_canvas = (sr.left - ox_screen) * k + ox_canvas;
+        var offY_canvas = (sr.top  - oy_screen) * k + oy_canvas;
+
+        ctx.setTransform(state.s * k, 0, 0, state.s * k,
+                         state.x * k + offX_canvas,
+                         state.y * k + offY_canvas);
+        ctx.drawImage(els.img, 0, 0);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+      }
+      ctx.restore();
+
+      if (els.toggleFrame && els.toggleFrame.checked) {
+        ctx.strokeStyle = 'rgba(37,99,235,0.9)';
+        ctx.lineWidth = Math.max(1, 2 * k);
+        if (ctx.setLineDash) ctx.setLineDash([8 * k, 6 * k]);
+        ctx.strokeRect(clipX, clipY, clipW, clipH);
+        if (ctx.setLineDash) ctx.setLineDash([]);
+      }
+
+      if (els.bgZ.value === 'top') drawBgCoverToCanvas();
+
+      if (canvas.toBlob) {
+        canvas.toBlob(function (b) {
+          if (!b) { alert('导出失败：空图像'); return; }
+          var url = URL.createObjectURL(b);
+          var a = document.createElement('a');
+          a.href = url; a.download = 'preview.png';
+          document.body.appendChild(a); a.click(); a.remove();
+          URL.revokeObjectURL(url);
+        }, 'image/png');
+      } else {
+        var a = document.createElement('a');
+        a.href = canvas.toDataURL('image/png');
+        a.download = 'preview.png';
+        document.body.appendChild(a); a.click(); a.remove();
+      }
+    } catch (err) {
+      alert('导出失败：' + err.message + '\n请通过 http:// 或 https:// 打开页面，不要用 file://');
+    }
+  });
+
+  // ===== 初始化 =====
+  applyBgZ();
+  applyFrame();
+  applyInsets();
+  window.addEventListener('resize', resizeStageToBg);
+  window.addEventListener('orientationchange', resizeStageToBg);
+  if(window.visualViewport){
+    window.visualViewport.addEventListener('resize', resizeStageToBg);
+    window.visualViewport.addEventListener('scroll', resizeStageToBg);
+  }
+})();
+</script>
+  </body>
+</html>
