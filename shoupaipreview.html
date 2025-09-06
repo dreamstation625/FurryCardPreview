@@ -409,6 +409,59 @@
     .footer a:hover {
       text-decoration: underline;
     }
+
+    /* 让 main 能并排摆放 stage 与右侧说明 */
+    main {
+      flex: 1 0 auto;
+      display: flex;
+      justify-content: center;
+      /* 居中对齐整体 */
+      gap: 16px;
+      /* 预览框与侧栏间距 */
+      padding-right: 8px;
+      /* 轻微留白，避免贴边 */
+    }
+
+    /* 右侧说明侧栏 */
+    .tips {
+      align-self: flex-start;
+      /* 顶部对齐 */
+      width: 260px;
+      /* 固定侧栏宽度 */
+      background: rgba(255, 255, 255, .9);
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 14px;
+      color: #334155;
+    }
+
+    .tips-title {
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: #111827;
+    }
+
+    .tips ul {
+      margin: 0;
+      padding-left: 18px;
+      line-height: 1.7;
+    }
+
+    /* 小屏时把侧栏放到下方、居中显示 */
+    @media (max-width: 900px) {
+      main {
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .tips {
+        width: min(96vw, 520px);
+        margin: 0 auto;
+        /* 水平居中 */
+      }
+    }
   </style>
 </head>
 
@@ -464,8 +517,19 @@
       <div id="bgTop" class="bg-layer top"><img id="bgImgTop" alt="背景顶层" /></div>
       <div id="dropHint" class="drop-hint">松开以上传图片</div>
       <div id="frame" class="frame-overlay"></div>
-      <div class="help">支持拖拽/粘贴图片 · 中间区域保留，最外侧裁掉 · 导出PNG</div>
+      <!--<div class="help">支持拖拽/粘贴图片 · 中间区域保留，最外侧裁掉 · 导出PNG</div>-->
     </div>
+
+    <aside class="tips">
+      <div class="tips-title">使用说明</div>
+      <ul>
+        <li>支持拖拽 / 粘贴图片</li>
+        <li>中间区域保留，最外侧裁掉</li>
+        <li>可导出 PNG</li>
+      </ul>
+    </aside>
+
+
   </main>
 
   <footer class="footer">
