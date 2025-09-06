@@ -135,7 +135,7 @@
       }
 
       .group .slider {
-        width: 110px
+        width: 80px
       }
 
       .btn.small {
@@ -161,7 +161,10 @@
       }
 
       .group .slider {
-        width: 100% !important
+        width: 100% !important;
+        max-width: 110px;
+        /* 限制最大宽度 */
+
       }
 
       .btn.small {
@@ -210,6 +213,33 @@
         /* 防止太窄 */
         margin: 6px 0;
       }
+
+      /* 参考边框这一组允许换行，并让第一个label（参考边框）独占一行 */
+      #frameGroup {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+      }
+
+      #frameGroup>label:first-child {
+        flex-basis: 100%;
+        /* 换行到单独一行 */
+      }
+
+      .inset-group {
+        display: flex;
+        flex-wrap: wrap;
+        /* 允许换行 */
+        gap: 10px;
+      }
+
+      .inset-group label {
+        flex: 1 1 45%;
+        /* 每个大约占一半宽度 */
+        white-space: nowrap;
+      }
+
     }
 
     /* 调小参考边框内四个滑块的宽度 */
@@ -397,16 +427,18 @@
       <button id="bgReset" class="btn small">重置背景</button>
     </div>
 
-    <div class="group">
+    <div class="group" id="frameGroup">
       <label><input id="toggleFrame" type="checkbox" checked />参考边框</label>
-      <label>上 <input id="insetTop" type="range" min="0" max="30" step="1" value="5" class="slider" /> <span
-          id="insetTopVal" class="val">5%</span></label>
-      <label>右 <input id="insetRight" type="range" min="0" max="30" step="1" value="5" class="slider" /> <span
-          id="insetRightVal" class="val">5%</span></label>
-      <label>下 <input id="insetBottom" type="range" min="0" max="30" step="1" value="5" class="slider" /> <span
-          id="insetBottomVal" class="val">5%</span></label>
-      <label>左 <input id="insetLeft" type="range" min="0" max="30" step="1" value="5" class="slider" /> <span
-          id="insetLeftVal" class="val">5%</span></label>
+      <div class="inset-group">
+        <label>上 <input id="insetTop" type="range" min="0" max="30" step="1" value="5" class="slider" /> <span
+            id="insetTopVal" class="val">5%</span></label>
+        <label>右 <input id="insetRight" type="range" min="0" max="30" step="1" value="5" class="slider" /> <span
+            id="insetRightVal" class="val">5%</span></label>
+        <label>下 <input id="insetBottom" type="range" min="0" max="30" step="1" value="5" class="slider" /> <span
+            id="insetBottomVal" class="val">5%</span></label>
+        <label>左 <input id="insetLeft" type="range" min="0" max="30" step="1" value="5" class="slider" /> <span
+            id="insetLeftVal" class="val">5%</span></label>
+      </div>
     </div>
 
     <div class="group" id="ctrlGroup">
